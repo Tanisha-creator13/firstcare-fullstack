@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-cream font-body text-navy-900;
+  }
+
+  * {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-navy-800 text-cream font-body font-medium px-6 py-3 rounded-lg
+           hover:bg-navy-700 active:scale-95 transition-all duration-200 
+           inline-flex items-center gap-2 text-sm tracking-wide;
+  }
+
+  .btn-outline {
+    @apply border border-navy-800 text-navy-800 font-body font-medium px-6 py-3 rounded-lg
+           hover:bg-navy-800 hover:text-cream active:scale-95 transition-all duration-200
+           inline-flex items-center gap-2 text-sm tracking-wide;
+  }
+
+  .btn-danger {
+    @apply bg-ember-500 text-white font-body font-medium px-6 py-3 rounded-lg
+           hover:bg-ember-400 active:scale-95 transition-all duration-200
+           inline-flex items-center gap-2 text-sm tracking-wide;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl border border-parchment shadow-sm;
+  }
+
+  .input-field {
+    @apply w-full bg-parchment border border-parchment/60 rounded-xl px-4 py-3 
+           text-navy-900 font-body text-sm outline-none 
+           focus:border-navy-500 focus:ring-2 focus:ring-navy-500/10 transition-all;
+  }
+
+  .label {
+    @apply block text-xs font-body font-medium text-navy-600 uppercase tracking-widest mb-2;
+  }
+
+  .urgency-emergency {
+    @apply bg-red-50 border-red-200 text-red-800;
+  }
+  .urgency-urgent {
+    @apply bg-orange-50 border-orange-200 text-orange-800;
+  }
+  .urgency-monitor {
+    @apply bg-yellow-50 border-yellow-200 text-yellow-800;
+  }
+  .urgency-low {
+    @apply bg-green-50 border-green-200 text-green-800;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c5bdb0; border-radius: 99px; }
+
+/* Slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 99px;
+  background: #e5dfd5;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #0f1729;
+  cursor: pointer;
+  border: 3px solid white;
+  box-shadow: 0 0 0 2px #0f1729;
+}
+
+.disclaimer-banner {
+  background: linear-gradient(90deg, #0f1729 0%, #162040 100%);
+}
