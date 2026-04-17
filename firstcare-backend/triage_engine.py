@@ -1,11 +1,6 @@
 """
-Triage Engine — mirrors the spec exactly.
-
-Step 1  Pydantic validation (done in router)
-Step 2  Red flag regex detection → immediate EMERGENCY
-Step 3  Risk scoring (severity / duration / age / conditions / keywords)
-Step 4  Gemini API call for explanation + first_aid_steps + doctor_questions
-Step 5  Safety layer (strip diagnoses, prepend 112 call if EMERGENCY)
+Triage Engine — Ethical AI Edition
+Integrated with Clinical Reasoning (D3) and Safety Interceptors (D5).
 """
 
 import re
@@ -25,7 +20,7 @@ genai.configure(api_key=settings.gemini_api_key)
 _model = genai.GenerativeModel("gemini-1.5-flash")
 
 
-# ── Red flag patterns ─────────────────────────────────────────────────────────
+# ── Red flag patterns (Safety Interceptor D5) ─────────────────────────────────
 RED_FLAG_PATTERNS = [
     (r"chest\s*pain.{0,40}(sweat|breath|arm|jaw)", "Possible cardiac event"),
     (r"(can'?t breathe|difficulty breathing|struggling to breathe|not breathing)", "Severe breathing difficulty"),
@@ -72,6 +67,7 @@ KEYWORD_SCORES = [
     (re.compile(r"\brash\b|hives|urticaria", re.I), 4),
 ]
 
+# Regex to strip diagnostic language (Safety Layer)
 DIAGNOSIS_PHRASES = re.compile(
     r"\b(you\s*(have|are\s*diagnosed\s*with)|diagnosis\s*(is|of)|this\s*is\s*(definitely|certainly|likely)\s*(a|an)?|"
     r"prescri(be|ption)|take\s+(mg|milligram|tablet|pill)|dosage|medication\s+of)\b",
@@ -120,108 +116,60 @@ def _calculate_score(req: TriageRequest) -> tuple[int, list[ScoreBreakdownItem]]
 
 
 def _score_to_category(score: int) -> str:
-    if score >= 60:
-        return "EMERGENCY"
-    if score >= 40:
-        return "URGENT"
-    if score >= 20:
-        return "MONITOR"
+    if score >= 60: return "EMERGENCY"
+    if score >= 40: return "URGENT"
+    if score >= 20: return "MONITOR"
     return "LOW_RISK"
 
 
 def _build_gemini_prompt(req: TriageRequest, category: str, score: int) -> str:
     conditions_str = ", ".join(req.conditions) if req.conditions and "none" not in req.conditions else "None"
-    return f"""You are a medical triage assistant. A patient has submitted the following information.
+    return f"""You are a medical triage assistant. Analyze the patient data and provide guidance.
+    
+Patient: Age {req.age}, Gender {req.gender}, History: {conditions_str}.
+Symptoms: "{req.symptoms}" (Severity {req.severity}/10, Duration: {req.duration.replace("_", " ")})
+Triage Result: {category} ({score}/100)
 
-Patient profile:
-- Age: {req.age}, Gender: {req.gender}
-- Known conditions: {conditions_str}
-- Symptom description: "{req.symptoms}"
-- Duration: {req.duration.replace("_", " ")}
-- Severity: {req.severity}/10
-- Triage category: {category} (risk score {score}/100)
+Your Task:
+1. Provide a supportive explanation ending in "Please see a doctor."
+2. Provide a 'clinical_logic' field: explain clearly WHY this risk level was chosen (e.g. "Respiratory symptoms are higher risk given your history of asthma").
+3. DO NOT diagnose or prescribe. DO NOT use medication names.
 
-Your task: Generate supportive, plain-English guidance. Follow these rules strictly:
-1. Do NOT diagnose any specific disease or condition.
-2. Do NOT mention any medication names or dosages.
-3. Always end the explanation with "Please see a doctor."
-4. Keep all language calm and reassuring, not alarming.
-5. Return ONLY valid JSON — no markdown, no backticks, no preamble.
-
-Return this exact JSON structure:
+Return ONLY JSON:
 {{
-  "explanation": "2-3 sentences in plain English describing what the symptoms may indicate (no diagnosis), ending with 'Please see a doctor.'",
-  "first_aid_steps": ["step 1", "step 2", "step 3", "step 4"],
-  "doctor_questions": ["question 1", "question 2", "question 3", "question 4", "question 5"]
+  "explanation": "Plain English summary...",
+  "clinical_logic": "One sentence reasoning for the risk score...",
+  "first_aid_steps": ["Step 1", "Step 2", "Step 3", "Step 4"],
+  "doctor_questions": ["Q1", "Q2", "Q3", "Q4", "Q5"]
 }}"""
 
 
 def _fallback_guidance(category: str) -> dict:
-    """Used when Gemini call fails."""
+    """Fallback if Gemini fails or for immediate Red Flag triggers."""
     fallbacks = {
         "EMERGENCY": {
             "explanation": "Your symptoms suggest a potentially serious condition. Call emergency services immediately. Please see a doctor.",
-            "first_aid_steps": [
-                "Call 112 or 911 immediately.",
-                "Stay still and calm — do not exert yourself.",
-                "Do not eat or drink anything.",
-                "Alert someone nearby about your condition.",
-            ],
-            "doctor_questions": [
-                "What is the most likely cause of my symptoms?",
-                "Do I need emergency tests or imaging?",
-                "Should I be admitted to hospital?",
-                "Are my current medications safe to continue?",
-                "What warning signs should bring me back to the ER?",
-            ],
+            "clinical_logic": "Risk level set to maximum due to critical red flag detection.",
+            "first_aid_steps": ["Call 911/112 immediately.", "Do not exert yourself.", "Unlock your door for paramedics.", "Alert someone nearby."],
+            "doctor_questions": ["What caused this sudden onset?", "What emergency tests are needed?", "Is my condition stable?"],
         },
         "URGENT": {
-            "explanation": "Your symptoms need medical attention within a few hours. Avoid strenuous activity and monitor closely. Please see a doctor.",
-            "first_aid_steps": [
-                "Rest and avoid physical exertion.",
-                "Stay hydrated with water or clear fluids.",
-                "Monitor symptoms and note any changes.",
-                "Prepare a list of your current medications.",
-            ],
-            "doctor_questions": [
-                "What is causing my symptoms and how serious is it?",
-                "What tests do you recommend?",
-                "Should I return if symptoms worsen in 12 hours?",
-                "Is there anything I should avoid?",
-                "Are there safe over-the-counter options in the meantime?",
-            ],
+            "explanation": "Your symptoms need attention within a few hours. Please see a doctor.",
+            "clinical_logic": "Risk score reflects high severity and acute symptoms.",
+            "first_aid_steps": ["Rest immediately.", "Monitor temperature.", "Gather current medications.", "Avoid solid foods if nauseous."],
+            "doctor_questions": ["Is this related to my history?", "What are the warning signs for the ER?", "When should I follow up?"],
         },
         "MONITOR": {
-            "explanation": "Your symptoms suggest a moderate condition that warrants attention within 24–48 hours. There is no immediate danger. Please see a doctor.",
-            "first_aid_steps": [
-                "Rest and avoid strenuous activity.",
-                "Stay well hydrated.",
-                "Track changes in your symptoms.",
-                "Schedule a doctor's appointment within 48 hours.",
-            ],
-            "doctor_questions": [
-                "What is the likely cause of my symptoms?",
-                "Are there lifestyle adjustments I should make?",
-                "Do I need blood work or diagnostics?",
-                "When should I seek urgent care instead?",
-                "Could this be related to my existing conditions?",
-            ],
+            "explanation": "Monitor symptoms closely over the next 24 hours. Please see a doctor.",
+            "clinical_logic": "Symptoms are moderate but stable. Score based on severity and duration.",
+            "first_aid_steps": ["Hydrate with clear fluids.", "Log symptom changes.", "Rest in a cool room."],
+            "doctor_questions": ["What lifestyle changes help?", "Is this a self-limiting illness?", "What diagnostic tests are next?"],
         },
         "LOW_RISK": {
-            "explanation": "Your symptoms appear mild and manageable at home for now. Monitor for any changes. Please see a doctor.",
-            "first_aid_steps": [
-                "Rest and allow your body to recover.",
-                "Stay hydrated and eat light meals.",
-                "Avoid self-medicating without reading labels.",
-                "Reassess if symptoms persist beyond 3 days.",
-            ],
-            "doctor_questions": [
-                "Are my symptoms consistent with a self-limiting illness?",
-                "What home remedies or OTC options are safe for me?",
-                "What symptoms would mean I should come in urgently?",
-                "Is there anything in my history that makes this more concerning?",
-                "How long should I expect these symptoms to last?",
-            ],
+            "explanation": "Symptoms appear mild. Monitor at home. Please see a doctor.",
+            "clinical_logic": "Symptom severity and duration are within low-risk parameters.",
+            "first_aid_steps": ["Rest and recover.", "Stay hydrated.", "Re-evaluate if symptoms persist."],
+            "doctor_questions": ["What OTC options are safe?", "How long should this last?", "Are there specific triggers to avoid?"],
         },
     }
     return fallbacks.get(category, fallbacks["LOW_RISK"])
@@ -237,26 +185,24 @@ def _call_gemini(prompt: str, category: str) -> dict:
             ),
         )
         raw = response.text.strip()
-        # Strip accidental markdown fences
         raw = re.sub(r"^```json\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
         data = json.loads(raw)
 
-        # Validate structure
+        # Validate structure (Transparency D3 requirement)
         assert "explanation" in data
-        assert isinstance(data.get("first_aid_steps"), list) and len(data["first_aid_steps"]) >= 1
-        assert isinstance(data.get("doctor_questions"), list) and len(data["doctor_questions"]) >= 1
+        assert "clinical_logic" in data
         return data
     except Exception as exc:
-        logger.warning("Gemini call failed (%s), using fallback guidance.", exc)
+        logger.warning("Gemini failed (%s). Falling back.", exc)
         return _fallback_guidance(category)
 
 
 def _apply_safety_layer(guidance: dict, category: str) -> dict:
-    """Remove diagnostic language; prepend 112 message for EMERGENCY."""
+    """Safety Interceptor: Strip diagnoses and handle emergency overrides."""
     explanation = DIAGNOSIS_PHRASES.sub("", guidance["explanation"])
     if category == "EMERGENCY":
-        explanation = "🚨 Call 112 or 911 immediately. " + explanation
+        explanation = "🚨 CALL 911 OR 112 IMMEDIATELY. " + explanation
     guidance["explanation"] = explanation.strip()
     return guidance
 
@@ -264,12 +210,7 @@ def _apply_safety_layer(guidance: dict, category: str) -> dict:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def run_triage(req: TriageRequest) -> dict:
-    """
-    Returns a dict with keys:
-        category, risk_score, red_flags, explanation,
-        first_aid_steps, doctor_questions, score_breakdown
-    """
-    # Step 2: red flags
+    # 1. Red Flags (Safety Interceptor D5)
     red_flags = _detect_red_flags(req.symptoms)
     if red_flags:
         guidance = _fallback_guidance("EMERGENCY")
@@ -278,19 +219,19 @@ def run_triage(req: TriageRequest) -> dict:
             "category": "EMERGENCY",
             "risk_score": 100,
             "red_flags": red_flags,
-            "score_breakdown": [ScoreBreakdownItem(label="Red flag detected", points=100)],
+            "score_breakdown": [ScoreBreakdownItem(label="Manual Safety Override: Red Flag Detected", points=100)],
             **guidance,
         }
 
-    # Step 3: scoring
+    # 2. Heuristic Scoring
     total_score, breakdown = _calculate_score(req)
     category = _score_to_category(total_score)
 
-    # Step 4: Gemini
+    # 3. LLM Reasoning (Transparency D3)
     prompt = _build_gemini_prompt(req, category, total_score)
     guidance = _call_gemini(prompt, category)
 
-    # Step 5: safety
+    # 4. Final Safety Pass
     guidance = _apply_safety_layer(guidance, category)
 
     return {

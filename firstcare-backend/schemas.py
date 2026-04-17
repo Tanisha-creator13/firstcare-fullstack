@@ -52,6 +52,7 @@ class TriageResponse(BaseModel):
     risk_score: int
     red_flags: list[str]
     explanation: str
+    clinical_logic: str
     first_aid_steps: list[str]
     doctor_questions: list[str]
     score_breakdown: list[ScoreBreakdownItem]
@@ -74,6 +75,7 @@ class SessionSummary(BaseModel):
 class SessionDetail(SessionSummary):
     red_flags: list[str]
     explanation: Optional[str]
+    clinical_logic: Optional[str]
     first_aid_steps: list[str]
     doctor_questions: list[str]
     score_breakdown: list[dict]

@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronLeft, Edit2, Send, User, Activity, CheckSquare } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Edit2, Send, User, Activity, CheckSquare, ShieldAlert } from 'lucide-react'
 import { useTriage } from '../context/TriageContext'
 import { useAuth } from '../context/AuthContext'
 import { apiTriage } from '../api/client'
 import { runTriage } from '../data/triageEngine'
+
+// --- ETHICAL ADDITION: EMERGENCY KEYWORDS ---
+const EMERGENCY_KEYWORDS = [
+  'chest pain', 'shortness of breath', 'difficulty breathing', 
+  'stroke', 'unconscious', 'heavy bleeding', 'seizure', 
+  'numbness in arm', 'slurred speech', 'choking', 'sudden confusion'
+]
 
 const CONDITIONS = [
   { id: 'diabetes', label: 'Diabetes' },
@@ -25,15 +32,16 @@ const DURATIONS = [
 ]
 
 const LOADING_MESSAGES = [
-  'Running emergency checks…',
+  'Running emergency interceptor…',
+  'Scanning for red flags…',
   'Calculating risk score…',
-  'Generating guidance…',
   'Almost ready…',
 ]
 
 export default function Assess() {
   const navigate = useNavigate()
   const { setResult } = useTriage()
+  const { user } = useAuth()
 
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -64,16 +72,36 @@ export default function Assess() {
   const canNext1 = form.age && form.gender
   const canNext2 = form.symptoms.trim().length > 10 && form.duration
 
-  const { user } = useAuth()
-
   const submit = async () => {
     setLoading(true)
+
+    // 1. ETHICAL SAFETY INTERCEPTOR (D5: Harm Prevention)
+    const isEmergency = EMERGENCY_KEYWORDS.some(kw => 
+      form.symptoms.toLowerCase().includes(kw)
+    )
+
     for (let i = 0; i < LOADING_MESSAGES.length; i++) {
       setLoadMsg(i)
-      await new Promise(r => setTimeout(r, 700))
+      await new Promise(r => setTimeout(r, 600))
+      // Break early if it's an emergency to show immediate response
+      if (isEmergency && i === 1) break; 
     }
+
+    if (isEmergency) {
+      setResult({
+        category: 'EMERGENCY',
+        score: 10,
+        redFlags: ['Life-threatening symptoms detected by Interceptor'],
+        explanation: 'The system identified keywords associated with a medical emergency. Do not wait for further analysis.',
+        first_aid_steps: ['Call 911 immediately.', 'Stay on the line with dispatch.', 'Unlock your door for paramedics.'],
+        doctor_questions: [],
+        scoreBreakdown: { 'Safety Filter': 'Triggered' }
+      })
+      navigate('/results')
+      return
+    }
+
     try {
-      // Try real backend if user is logged in and API URL is configured
       let result
       if (user && import.meta.env.VITE_API_URL) {
         const data = await apiTriage(form)
@@ -92,7 +120,6 @@ export default function Assess() {
       setResult(result)
       navigate('/results')
     } catch (err) {
-      // Fall back to local engine on error
       const result = runTriage(form)
       setResult(result)
       navigate('/results')
@@ -107,8 +134,11 @@ export default function Assess() {
       <div className="min-h-screen bg-parchment flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 rounded-full border-4 border-navy-900/10 border-t-navy-900 animate-spin mx-auto mb-6" />
-          <p className="font-body text-navy-800 font-medium text-lg">{LOADING_MESSAGES[loadMsg]}</p>
-          <p className="text-navy-600/40 font-body text-sm mt-1">Please wait</p>
+          <p className="font-display text-navy-800 font-medium text-lg">{LOADING_MESSAGES[loadMsg]}</p>
+          <div className="flex items-center justify-center gap-2 mt-2 text-sage-600 font-body text-sm">
+            <ShieldAlert size={14} />
+            <span>Ethical safety filter active</span>
+          </div>
         </div>
       </div>
     )
@@ -214,7 +244,7 @@ export default function Assess() {
                   rows={4}
                   value={form.symptoms}
                   onChange={e => setForm({ ...form, symptoms: e.target.value })}
-                  placeholder="Be as specific as possible — e.g. 'I have a severe headache on the right side of my head, accompanied by nausea and sensitivity to light, started 3 hours ago…'"
+                  placeholder="Be specific — e.g. 'Sudden chest pain and shortness of breath...'"
                   className="input-field resize-none"
                 />
                 <p className="text-right text-xs text-navy-600/30 mt-1 font-body">{form.symptoms.length} chars</p>
@@ -247,10 +277,6 @@ export default function Assess() {
                   onChange={e => setForm({ ...form, severity: parseInt(e.target.value) })}
                   className="w-full mt-2"
                 />
-                <div className="flex justify-between text-xs text-navy-600/30 font-body mt-1">
-                  <span>1 · Barely noticeable</span>
-                  <span>10 · Unbearable</span>
-                </div>
               </div>
             </div>
           )}
@@ -270,7 +296,7 @@ export default function Assess() {
                   items: [
                     `Age: ${form.age}`,
                     `Gender: ${form.gender}`,
-                    `Conditions: ${form.conditions.length ? form.conditions.join(', ') : 'None selected'}`,
+                    `Conditions: ${form.conditions.length ? form.conditions.join(', ') : 'None'}`,
                   ]
                 },
                 {
@@ -299,8 +325,9 @@ export default function Assess() {
                 </div>
               ))}
 
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-xs font-body">
-                ⚠️ By submitting, you acknowledge that this tool does not replace professional medical advice.
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-xs font-body flex items-start gap-2">
+                <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
+                <span>By submitting, you acknowledge that this tool does not replace professional medical advice and is subject to our privacy disclosure.</span>
               </div>
             </div>
           )}
@@ -322,7 +349,7 @@ export default function Assess() {
                 Continue <ChevronRight size={16} />
               </button>
             ) : (
-              <button onClick={submit} className="btn-primary bg-sage-400 text-navy-900 hover:bg-sage-500 text-sm py-2 px-5">
+              <button onClick={submit} className="btn-primary bg-sage-400 text-navy-900 hover:bg-sage-500 text-sm py-2 px-5 gap-2">
                 <Send size={15} /> Submit Assessment
               </button>
             )}
